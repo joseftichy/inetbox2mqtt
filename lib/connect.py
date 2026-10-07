@@ -480,12 +480,10 @@ class Connect():
                 self.sta_if.active(False)
                 self.sta_if = None
                 if self.run_mode() == 1:
-                    # boot_count() > 0, decreased
-                    if self.boot_count():
-                        soft_reset()
-                    else:    
-                        self.run_mode(0)
-                        
+                    # never fall back to OS-mode, retry forever
+                    self.boot_count(10)
+                    soft_reset()
+
                 elif self.run_mode() > 1:  
                     soft_reset()
 
@@ -509,6 +507,18 @@ class Connect():
         # set boot_count back, connection is realized
         self.boot_count(10)
         return 1
+
+    # retry the first broker connect, reboot if the broker stays unreachable
+    async def mqtt_connect_loop(self, tries=30):
+        for i in range(tries):
+            try:
+                await asyncio.wait_for(self.client.connect(), 20)
+                return
+            except Exception as e:
+                self.log.info(f"MQTT connect failed ({i+1}/{tries}): {repr(e)}")
+            await asyncio.sleep(10)
+        self.log.info("MQTT broker not reachable - reboot")
+        reset()
 
     def set_mqtt(self, sta=-1):
         if sta == -1:
@@ -535,7 +545,7 @@ class Connect():
                 self.config.set_last_will("service/truma/control_status/alive", "OFF", retain=True, qos=0)  # last will is important
                 self.client = MQTTClient(self.config)
                 self.log.info("Start mqtt connect task")
-                asyncio.create_task(self.client.connect())
+                asyncio.create_task(self.mqtt_connect_loop())
                 return 1
             else:
                 self.log.debug("no Credentials found")
