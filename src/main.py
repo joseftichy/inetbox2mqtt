@@ -13,7 +13,7 @@ from args import Args
 UPDATE = "update.py"
 
 appname = "inetbox2mqtt"
-rel_no = "2.6.5"
+rel_no = "3.0.2"
 
 
 #sleep to give some boards time to initialize, for example Rpi Pico W
@@ -45,7 +45,7 @@ if (w.run_mode() > 1):
     import mip
     import time
     try:
-        mip.install("github:mc0110/inetbox2mqtt/src/" + UPDATE, target = "/")
+        mip.install("github:joseftichy/inetbox2mqtt/src/" + UPDATE, target = "/")
     except:
         import machine
         machine.reset()            

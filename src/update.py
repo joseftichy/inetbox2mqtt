@@ -32,7 +32,7 @@ def update_repo():
     #sleep to give some boards time to initialize, for example Rpi Pico W
 
     # bootloader for the whole suite
-    tree = "github:mc0110/inetbox2mqtt"
+    tree = "github:joseftichy/inetbox2mqtt"
 
     env = [
         ["/src/", "args.py", "/"],
@@ -77,7 +77,7 @@ def read_repo_rel():
     import mip
     import time
     try:
-        mip.install("github:mc0110/inetbox2mqtt/src/release.py", target = "/")
+        mip.install("github:joseftichy/inetbox2mqtt/src/release.py", target = "/")
     except:
         import machine
         machine.reset()
