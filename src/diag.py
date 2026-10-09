@@ -57,13 +57,15 @@ def install():
     orig = logging.Logger.log
 
     def _log(self, level, msg, *args):
+        # fast exit for the many debug calls in the LIN loop
+        if level < (self.level or logging._level):
+            return
         orig(self, level, msg, *args)
-        if level >= (self.level or logging._level):
-            try:
-                text = msg % args if args else str(msg)
-            except Exception:
-                text = str(msg)
-            add_line(logging._level_dict.get(level, str(level)) + ":" + str(self.name) + ":" + text)
+        try:
+            text = msg % args if args else str(msg)
+        except Exception:
+            text = str(msg)
+        add_line(logging._level_dict.get(level, str(level)) + ":" + str(self.name) + ":" + text)
 
     logging.Logger.log = _log
 
@@ -113,8 +115,8 @@ def reset_cause():
     return str(c)
 
 
+# the caller does the gc.collect() (main1: only in a LIN pause)
 def get(con_if, rel_no):
-    gc.collect()
     d = {
         "uptime": uptime(),
         "mem_free": gc.mem_free(),

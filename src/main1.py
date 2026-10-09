@@ -33,6 +33,7 @@ from lin import Lin
 from duocontrol import duo_ctrl
 from spiritlevel import spirit_level
 import time
+import gc
 import json
 import diag
 import ota_guard
@@ -56,6 +57,7 @@ HA_STOPIC	= ''
 HA_CTOPIC	= ''
 HA_CONFIG	= ''
 HA_LEGACY	= []
+lin_active	= 0  # ticks_ms of the last byte on the LIN bus
 
 
 
@@ -273,6 +275,10 @@ async def main():
     wd = False
     while True:
         await asyncio.sleep(10) # Update every 10sec
+        # house keeping only in a pause of the CPplus - a gc during a LIN frame
+        # makes the answer too late and the CPplus drops e.g. the set commands
+        await lin_idle()
+        gc.collect()
         if file: logging._stream.flush()
         await publish_log()
         s =lin.app.get_all(True)
@@ -310,12 +316,23 @@ async def main():
             await publish_diag()
             
 
+# waits until the LIN bus is quiet for quiet_ms (the CPplus sends in bursts with pauses of 15-25s)
+async def lin_idle(quiet_ms=1500, max_s=30):
+    for _ in range(max_s * 10):
+        d = time.ticks_diff(time.ticks_ms(), lin_active)
+        if d > quiet_ms or d < 0:  # d < 0: no LIN traffic for days (ticks wrap)
+            return
+        await asyncio.sleep_ms(100)
+
 # major ctrl loop for inetbox-communication
 async def lin_loop():
     global lin
+    global lin_active
     await asyncio.sleep(1) # Delay at begin
     log.info("lin-loop is running")
     while True:
+        if lin.serial.any():
+            lin_active = time.ticks_ms()
         await lin.loop_serial()
         if not(lin.stop_async): # full performance to send buffer
             await asyncio.sleep_ms(1)
