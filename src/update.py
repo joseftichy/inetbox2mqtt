@@ -118,21 +118,14 @@ def update_repo():
     import os, gc
     import ota_guard
 
+    # only the files which are on the filesystem of the flash image;
+    # lin.py, inetboxapp.py, conversions.py, ... are frozen in the firmware -
+    # as .py files they would be compiled into the RAM (MemoryError at start)
     env = [
         ["/src/", "args.py", "/"],
-        ["/src/", "vector.py", "/"],
-        ["/src/", "spiritlevel.py", "/"],
-        ["/src/", "duocontrol.py", "/"],
-        ["/src/", "imu.py", "/"],
-        ["/lib/", "gen_html.py", "/lib"],
-        ["/lib/", "kalman.py", "/lib"],
-        ["/lib/", "web_os.py", "/lib"],        
+        ["/lib/", "web_os.py", "/lib"],
         ["/lib/", "web_os_main.py", "/lib"],
-           
         ["/src/", "tools.py", "/"],
-        ["/src/", "conversions.py", "/"],
-        ["/src/", "lin.py", "/"],
-        ["/src/", "inetboxapp.py", "/"],
         ["/src/", "main.py", "/"],
         ["/src/", "main1.py", "/"],
         ["/lib/", "connect.py", "/lib"],

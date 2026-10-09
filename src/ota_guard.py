@@ -96,7 +96,8 @@ def back_to_normal():
     _write(RUN_MODE, "1")
 
 
-# copy the given absolute paths (e.g. "/main.py", "/lib/connect.py") to BAK
+# copy the given absolute paths (e.g. "/main.py", "/lib/connect.py") to BAK,
+# the list of all paths is kept to remove files which didn't exist before
 def backup(files):
     _clear_dir(BAK)
     _mkdir(BAK)
@@ -104,16 +105,18 @@ def backup(files):
     for p in files:
         if exists(p):
             _copy(p, BAK + p)
+    _write(BAK + "/files.txt", "\n".join(files))
 
 
 def restore():
-    for d in ("", "/lib"):
-        if not exists(BAK + d):
+    files = (_read(BAK + "/files.txt") or "").split("\n")
+    for p in files:
+        if not p:
             continue
-        for name in os.listdir(BAK + d):
-            p = d + "/" + name
-            if not (os.stat(BAK + p)[0] & 0x4000):
-                _copy(BAK + p, p)
+        if exists(BAK + p):
+            _copy(BAK + p, p)
+        else:
+            _remove(p)  # new with the failed release
 
 
 def start_trial():
