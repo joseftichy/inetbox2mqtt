@@ -1,3 +1,13 @@
+# Image V3.0.4 of this fork (ESP32, 4 MB)
+
+**Current image: `flash_esp32_inetbox2mqtt_v304_4M.bin.zip`** – release 3.0.4 of this fork (see the section "This fork" in the main README). Unzip it and flash the `.bin` at address 0:
+
+      esptool.py --port /dev/tty.usbserial-0001 --baud 460800 write_flash 0 flash_esp32_inetbox2mqtt_v304_4M.bin
+
+The firmware part is identical to the original V2.6.5 image; only the files on the filesystem are those of 3.0.4. After flashing, the port starts in OS mode (access point, http://192.168.4.1). Credentials have to be entered again.
+
+`flash_esp32_inetbox2mqtt_v265_noOS_4M.bin.zip` is an older intermediate image (2.6.5 + retry-forever patch) and is kept only for reference. The images below are the original ones of mc0110.
+
 # Image V2.6.5 for ESP32 and V2.6.4 for WOMOLIN ESP32 Interface V1 and V2
 
 The flash_esp32_xxxx.bin file contains both the python and the .py files. This allows the whole project to be flashed onto the ESP32 in one go. For this, you can use the esptool. In my case, it finds the serial port of the ESP32 automatically, but the port can also be specified. The ESP32 must be in programming mode (GPIO0 to GND at startup). The command to flash the complete .bin file to the ESP32 is:

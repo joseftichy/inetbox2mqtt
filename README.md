@@ -12,6 +12,66 @@
 </div>
 <br>
 
+## This fork: current version 3.0.4
+
+This is a fork of [mc0110/inetbox2mqtt](https://github.com/mc0110/inetbox2mqtt), based on release **2.6.5**. It is maintained for one camper (Truma Combi + CPplus, ESP32, Home Assistant) and focuses on a port that recovers by itself and can be updated safely over WiFi. Everything below this section is the original documentation and still applies.
+
+**Current version: 3.0.4** – running in the camper; switching the heating from Home Assistant tested and working.
+
+### Changes compared to 2.6.5
+
+**Self-recovery (`lib/connect.py`)**
+- In normal mode the port never falls back to OS mode (access point 192.168.4.1). If the WiFi is not available, it retries forever (a reboot every ~60 s). In 2.6.5 the port went to OS mode after 10 failed tries and stayed offline until somebody reconfigured it – e.g. after the router was switched off for ~11 minutes.
+- The first connection to the MQTT broker is retried 30 times (20 s timeout, 10 s pause); after that the port resets. In 2.6.5 one failed first connect left MQTT dead until a manual reboot.
+
+**OTA updates from this fork (`src/main.py`, `src/update.py`)**
+- OTA (`service/truma/set/ota_update` = `1`, or the HA select `truma_ota_update`) downloads from `joseftichy/inetbox2mqtt`, branch `main` – not from the original repository.
+- Optional test channel: `ota=beta` in `args.dat` (e.g. `hw=ESP32 ota=beta`) makes a port update from the branch `beta`.
+
+**Safe OTA (`src/update.py`, new `src/ota_guard.py`, `src/boot.py`)**
+- All files are taken from one commit (resolved via the GitHub API), so no mix of old and new files from the GitHub cache.
+- Everything is downloaded to `/ota_new` first (5 tries per file). Only after a complete download are the running files saved to `/ota_bak` and replaced. If a download fails, the running release is kept.
+- A new release runs on trial: if it doesn't reach the MQTT broker within 3 boots (plus a 5-minute timer against hangs), the backup is restored automatically (rollback). Files added by the failed release are removed again.
+- Only the files that live on the filesystem are updated. Modules frozen in the firmware (`lin.py`, `inetboxapp.py`, `conversions.py`, …) are not downloaded – as `.py` files they would be compiled into RAM and the port crashes with `MemoryError`.
+- An update from a release without `ota_guard.py` (≤ 3.0.2) loads it first.
+- The result is published (retained) in `service/<topic>/control_status/ota_status`, e.g. `OK - 3.0.4 is running`, `rollback to 3.0.3 - new release did not start`, `download of tools.py failed (...) - 3.0.4 kept`. Home Assistant shows it as `sensor.<topic>_ota_status`.
+- Credentials and settings (`credentials.dat`, `cred.json`, `args.dat`, `run_mode.dat`) are never touched by an OTA update.
+
+**Home Assistant discovery (`src/main1.py`)**
+- The discovery topics contain the topic prefix: `homeassistant/<component>/<topic>/<entity>/config`. In 2.6.5 all ports used the same topics (e.g. `homeassistant/sensor/current_temp_room/config`), so a second port with another topic prefix overwrote the entities of the first one. Entity names are unchanged (`truma_current_temp_room`, …); the old shared topics are cleaned up once by the port with the prefix `truma`.
+
+**Tried and removed again (3.0.3)**
+- Version 3.0.3 added ESP diagnostics (WiFi RSSI, uptime, free memory, boot counter), the ESP log via MQTT and an online/offline status for HA. With it, the CPplus no longer accepted set commands (heating switched on in HA came back as off/0) – the additional work every minute and the higher RAM use disturbed the LIN timing. 3.0.4 has the runtime of 3.0.2 again; only the OTA check runs once after the start.
+
+### Versions
+
+| Version | Change |
+|---|---|
+| 3.0.1 | 2.6.5 + retry-forever WiFi/MQTT (no OS-mode fallback) |
+| 3.0.2 | OTA downloads from this fork |
+| 3.0.3 | safe OTA with rollback, discovery topics per port, ESP diagnostics and log via MQTT – **broke HA heating control** |
+| 3.0.4 | runtime of 3.0.2 again, keeps safe OTA, `ota_status` and discovery topics per port – **current** |
+
+### Flash image (USB)
+
+`bin/flash_esp32_inetbox2mqtt_v304_4M.bin.zip` contains the complete 4 MB image (MicroPython firmware + all files of 3.0.4) for an ESP32 with 4 MB flash. Unzip it first – flashing the `.zip` gives an "invalid header" boot loop:
+
+      esptool.py --port /dev/tty.usbserial-0001 --baud 460800 write_flash 0 flash_esp32_inetbox2mqtt_v304_4M.bin
+
+Flashing the full image erases the credentials. The port then starts in OS mode with the access point at http://192.168.4.1 – enter WiFi, broker and topic prefix (`truma`) there and switch to normal run. Later updates can be done over WiFi (OTA).
+
+To update an existing port by USB without losing its settings, copy only the program files, e.g. with `mpremote`:
+
+      mpremote connect /dev/tty.usbserial-0001 cp src/main.py :main.py + cp src/main1.py :main1.py + cp src/update.py :update.py + cp src/release.py :release.py + cp src/boot.py :boot.py + cp src/ota_guard.py :ota_guard.py + cp lib/connect.py :lib/connect.py
+
+### Things to know
+- Wrong WiFi credentials in normal mode can only be fixed via USB (serial REPL: Ctrl+C, then `import os; os.remove('run_mode.dat')` and reboot → OS mode) or by flashing the image again.
+- Never publish `ota_update` (or `reboot`, `os_run`) with the retain flag – the port would receive it again on every connect and update in a loop.
+- Self-reboots with `INFO:lin:system reboot required` come from the original LIN watchdog (no answer from the CPplus within 3 minutes), not from this fork.
+- Do not roll a 3.0.3/3.0.4 port back to 3.0.2 via OTA: the update list of 3.0.2 contains the frozen modules (see above) and the port would crash with `MemoryError`.
+
+---
+
 - **Communicate over MQTT protocol to simulate a TRUMA INETBOX**
 - **new: Full control of TRUMA Combi-heater and TRUMA Aventa air conditioning modes**.
 - **new: Support of different hw constellations via pin configuration tables**
