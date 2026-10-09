@@ -157,9 +157,35 @@ def update_repo():
     ota_guard.set_status("installed " + new_rel + " @" + sha[:7] + " (was " + old_rel + "), testing")
     print("OTA: " + new_rel + " installed, trial starts")
 
+# releases < 3.0.3 have no ota_guard.py yet (it comes with the update) - load it first
+def _ensure_guard():
+    import os
+    try:
+        import ota_guard
+        return
+    except ImportError:
+        pass
+    import time, machine
+    for tries in range(5):
+        try:
+            _download("/src/ota_guard.py", "/ota_guard.py")
+            return
+        except Exception as ex:
+            print("OTA: /src/ota_guard.py try " + str(tries + 1) + ": " + repr(ex))
+            try:
+                os.remove("/ota_guard.py")  # no half file
+            except OSError:
+                pass
+            time.sleep(3)
+    # GitHub not reachable: keep the running release, back to normal run-mode
+    with open("/run_mode.dat", "w") as f:
+        f.write("1")
+    machine.reset()
+
 # returns the release-no of the repo, without touching the local files
 def read_repo_rel():
     global old_rel, new_rel
+    _ensure_guard()
     import ota_guard
     old_rel = ota_guard._rel(ota_guard._read("/release.py") or "")
     ota_guard.set_status("checking for update (running " + old_rel + ")")
