@@ -33,6 +33,9 @@ from lin import Lin
 from duocontrol import duo_ctrl
 from spiritlevel import spirit_level
 import time
+import json
+import diag
+import ota_guard
 from machine import UART, Pin, I2C, soft_reset
 
 log = logging.getLogger(__name__)
@@ -52,6 +55,7 @@ Pub_SL_Prefix	= ''
 HA_STOPIC	= ''
 HA_CTOPIC	= ''
 HA_CONFIG	= ''
+HA_LEGACY	= []
 
 
 
@@ -64,7 +68,8 @@ def set_prefix(topic):
     global HA_STOPIC
     global HA_CTOPIC
     global HA_CONFIG
-    
+    global HA_LEGACY
+
     topic_root = topic
     S_TOPIC_1       = 'service/' + topic_root + '/set/'
     S_TOPIC_2       = 'homeassistant/status'
@@ -105,7 +110,27 @@ def set_prefix(topic):
         "set_reboot":            ['homeassistant/select/set_reboot/config', '{"name": "' + topic_root + '_set_reboot", "model": "' + HA_MODEL + '", "sw_version":"' + HA_SWV + '", "command_topic": "' + HA_CTOPIC + 'reboot", "options": ["0", "1"] }'],
         "set_os_run":            ['homeassistant/select/set_os_run/config', '{"name": "' + topic_root + '_set_os_run", "model": "' + HA_MODEL + '", "sw_version":"' + HA_SWV + '", "command_topic": "' + HA_CTOPIC + 'os_run", "options": ["0", "1"] }'],
         "ota_update":            ['homeassistant/select/ota_update/config', '{"name": "' + topic_root + '_ota_update", "model": "' + HA_MODEL + '", "sw_version":"' + HA_SWV + '", "command_topic": "' + HA_CTOPIC + 'ota_update", "options": ["0", "1"] }'],
+        # ESP diagnostics
+        "esp_rssi":              ['homeassistant/sensor/' + topic_root + '/esp_rssi/config', '{"name": "' + topic_root + '_esp_rssi", "model": "' + HA_MODEL + '", "sw_version":"' + HA_SWV + '", "entity_category": "diagnostic", "device_class": "signal_strength", "unit_of_measurement": "dBm", "state_class": "measurement", "state_topic": "' + HA_STOPIC + 'diag", "value_template": "{{ value_json.rssi }}"}'],
+        "esp_uptime":            ['homeassistant/sensor/' + topic_root + '/esp_uptime/config', '{"name": "' + topic_root + '_esp_uptime", "model": "' + HA_MODEL + '", "sw_version":"' + HA_SWV + '", "entity_category": "diagnostic", "device_class": "duration", "unit_of_measurement": "s", "state_topic": "' + HA_STOPIC + 'diag", "value_template": "{{ value_json.uptime }}"}'],
+        "esp_mem_free":          ['homeassistant/sensor/' + topic_root + '/esp_mem_free/config', '{"name": "' + topic_root + '_esp_mem_free", "model": "' + HA_MODEL + '", "sw_version":"' + HA_SWV + '", "entity_category": "diagnostic", "device_class": "data_size", "unit_of_measurement": "B", "state_class": "measurement", "state_topic": "' + HA_STOPIC + 'diag", "value_template": "{{ value_json.mem_free }}"}'],
+        "esp_boots":             ['homeassistant/sensor/' + topic_root + '/esp_boots/config', '{"name": "' + topic_root + '_esp_boots", "model": "' + HA_MODEL + '", "sw_version":"' + HA_SWV + '", "entity_category": "diagnostic", "state_class": "total_increasing", "state_topic": "' + HA_STOPIC + 'diag", "value_template": "{{ value_json.boots }}"}'],
+        "esp_reset_cause":       ['homeassistant/sensor/' + topic_root + '/esp_reset_cause/config', '{"name": "' + topic_root + '_esp_reset_cause", "model": "' + HA_MODEL + '", "sw_version":"' + HA_SWV + '", "entity_category": "diagnostic", "state_topic": "' + HA_STOPIC + 'diag", "value_template": "{{ value_json.reset_cause }}"}'],
+        "esp_ip":                ['homeassistant/sensor/' + topic_root + '/esp_ip/config', '{"name": "' + topic_root + '_esp_ip", "model": "' + HA_MODEL + '", "sw_version":"' + HA_SWV + '", "entity_category": "diagnostic", "state_topic": "' + HA_STOPIC + 'diag", "value_template": "{{ value_json.ip }}"}'],
+        "ota_status":            ['homeassistant/sensor/' + topic_root + '/ota_status/config', '{"name": "' + topic_root + '_ota_status", "model": "' + HA_MODEL + '", "sw_version":"' + HA_SWV + '", "entity_category": "diagnostic", "state_topic": "' + HA_STOPIC + 'ota_status"}'],
+        "esp_log":               ['homeassistant/sensor/' + topic_root + '/esp_log/config', '{"name": "' + topic_root + '_esp_log", "model": "' + HA_MODEL + '", "sw_version":"' + HA_SWV + '", "entity_category": "diagnostic", "state_topic": "' + HA_STOPIC + 'log"}'],
     }
+    HA_LEGACY = []
+    for k in HA_CONFIG.keys():
+        # all entities are unavailable in HA, if the ESP is offline (last will)
+        HA_CONFIG[k][1] = HA_CONFIG[k][1].rstrip()[:-1] + ', "availability_topic": "' + HA_STOPIC + 'esp"}'
+        # the topic_root in the discovery topic, so more ports don't overwrite each other
+        t = HA_CONFIG[k][0].split("/")
+        if len(t) == 4:
+            HA_LEGACY.append(HA_CONFIG[k][0])
+            HA_CONFIG[k][0] = "/".join([t[0], t[1], topic_root, t[2], t[3]])
+    # ESP online/offline itself
+    HA_CONFIG["esp"] = ['homeassistant/binary_sensor/' + topic_root + '/esp/config', '{"name": "' + topic_root + '_esp", "model": "' + HA_MODEL + '", "sw_version":"' + HA_SWV + '", "entity_category": "diagnostic", "device_class": "connectivity", "state_topic": "' + HA_STOPIC + 'esp", "payload_on": "online", "payload_off": "offline"}']
 
 # Universal callback function for all subscriptions
 def callback(topic, msg, retained, qos):
@@ -132,6 +157,13 @@ def callback(topic, msg, retained, qos):
         if topic == "ota_update":
             if msg == "1":
                 log.info("update software via OTA")
+                ota_guard.set_status("OTA started (running " + connect.rel_no + ")")
+                # qos=0: inside the callback we can't wait for an ack
+                try:
+                    await connect.client.publish(Pub_Prefix + "ota_status", ota_guard.get_status(), retain=True, qos=0)
+                    await asyncio.sleep(1)
+                except Exception:
+                    pass
                 connect.run_mode(3)
                 soft_reset()
             return
@@ -164,6 +196,8 @@ def callback(topic, msg, retained, qos):
 # Initialze the subscripted topics
 async def conn_callback(client):
     log.debug("Set subscription")
+    # ESP online - the last will sets it to offline
+    await connect.client.publish(Pub_Prefix + "esp", "online", retain=True, qos=0)
     # inetbox_set_commands
     await connect.client.subscribe(S_TOPIC_1+"#", 1)
     # HA_online_command
@@ -172,10 +206,12 @@ async def conn_callback(client):
 
 # HA autodiscovery - delete all entities
 async def del_ha_autoconfig(c):
-    for i in HA_CONFIG.keys():
+    # entities of releases < 3.0.3 used discovery topics without topic_root
+    legacy = HA_LEGACY if topic_root == "truma" else []
+    for t in [HA_CONFIG[i][0] for i in HA_CONFIG.keys()] + legacy:
         await asyncio.sleep(0) # clean asyncio programming
         try:
-            await c.publish(HA_CONFIG[i][0], "{}", qos=1)
+            await c.publish(t, "{}", qos=1)
         except:
             log.debug("Publishing error in del_ha_autoconfig")
     log.info("del ha_autoconfig completed")
@@ -191,7 +227,34 @@ async def set_ha_autoconfig(c):
         except:
             log.debug("Publishing error in set_ha_autoconfig")
     await c.publish(Pub_Prefix + "release", connect.rel_no, qos=1)
+    await c.publish(Pub_Prefix + "esp", "online", retain=True, qos=1)
     log.info("set ha_autoconfig completed")
+
+# send the ESP diagnostics (json, every 60 sec)
+async def publish_diag():
+    try:
+        await connect.client.publish(Pub_Prefix + "diag", json.dumps(diag.get(connect.con_if, connect.rel_no)), qos=0)
+    except Exception as e:
+        log.debug("Error in diag publishing")
+
+# send the buffered log lines, max. 10 per call - the rest follows 10 sec later
+async def publish_log():
+    for l in diag.take_lines(10):
+        try:
+            await connect.client.publish(Pub_Prefix + "log", l, qos=0)
+        except Exception:
+            pass
+
+# a release on trial (after OTA) works, if it reaches this point
+async def confirm_ota():
+    if ota_guard.confirm():
+        ota_guard.set_status("OK - " + connect.rel_no + " is running")
+        log.info("OTA confirmed: " + connect.rel_no)
+    s = ota_guard.get_status()
+    if s:
+        await connect.client.publish(Pub_Prefix + "ota_status", s, retain=True, qos=1)
+    for l in diag.pop_crash():
+        diag.add_line("CRASH before last reboot: " + l)
 
 # main publisher-loop
 async def main():
@@ -203,12 +266,15 @@ async def main():
     await del_ha_autoconfig(connect.client)
     await set_ha_autoconfig(connect.client)
     log.info("Initializing completed")
-    
+    await confirm_ota()
+    await publish_diag()
+
     i = 0
     wd = False
     while True:
         await asyncio.sleep(10) # Update every 10sec
         if file: logging._stream.flush()
+        await publish_log()
         s =lin.app.get_all(True)
         for key in s.keys():
             log.debug(f'publish {key}:{s[key]}')
@@ -241,6 +307,7 @@ async def main():
         if not(i % 6):
             i = 0
             lin.app.status["alive"][1] = True # publish alive-heartbeat every min
+            await publish_diag()
             
 
 # major ctrl loop for inetbox-communication
@@ -272,6 +339,10 @@ async def sl_loop():
 
 async def ctrl_loop():
     loop = asyncio.get_event_loop()
+    # errors in tasks go to the log (and via mqtt to HA)
+    def exc_handler(loop, context):
+        log.error("task error: " + repr(context["exception"]))
+    loop.set_exception_handler(exc_handler)
     a=asyncio.create_task(main())
     b=asyncio.create_task(lin_loop())
     if not(dc == None):
@@ -344,7 +415,7 @@ def run(w, lin_debug, inet_debug, mqtt_debug, logfile):
         
     set_prefix(topic_root)
     log.info(f"prefix: '{topic_root}' set: {S_TOPIC_1} rec: {Pub_Prefix}")
-    connect.config.set_last_will("service/" + topic_root + "/control_status/alive", "OFF", retain=True, qos=0)  # last will is important
+    connect.config.set_last_will("service/" + topic_root + "/control_status/esp", "offline", retain=True, qos=0)  # last will is important
     connect.set_proc(subscript = callback, connect = conn_callback)
     
     if not(dc == None):

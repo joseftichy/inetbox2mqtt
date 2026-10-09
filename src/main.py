@@ -13,7 +13,7 @@ from args import Args
 UPDATE = "update.py"
 
 appname = "inetbox2mqtt"
-rel_no = "3.0.2"
+rel_no = "3.0.3"
 
 
 #sleep to give some boards time to initialize, for example Rpi Pico W
@@ -25,11 +25,19 @@ file = args.get_key("file")
 if file != None:
     f = open(file, "a")
     logging.basicConfig(stream=f)
-    
+
 log = logging.getLogger(__name__)
 
 
 log.setLevel(logging.INFO)
+
+# log lines are also sent via mqtt (topic .../log)
+try:
+    import diag
+    diag.install()
+    diag.count_boot()
+except Exception as e:
+    print("diag:", repr(e))
 
 log.info(f"release no: {rel_no}")
 w=connect.Connect(args.get_key("hw"), debuglog=args.check("connect=debug"))
@@ -45,10 +53,18 @@ if (w.run_mode() > 1):
     import mip
     import time
     try:
-        mip.install("github:joseftichy/inetbox2mqtt/src/" + UPDATE, target = "/")
-    except:
-        import machine
-        machine.reset()            
+        # args.dat "ota=beta" loads from the branch beta (test port), default is the main branch
+        branch = args.get_key("ota")
+        if branch:
+            mip.install("github:joseftichy/inetbox2mqtt/src/" + UPDATE, target = "/", version = branch)
+        else:
+            mip.install("github:joseftichy/inetbox2mqtt/src/" + UPDATE, target = "/")
+    except Exception as e:
+        # GitHub not reachable: keep the running release, back to normal mode
+        import ota_guard
+        ota_guard.set_status("GitHub not reachable (" + repr(e) + ") - " + rel_no + " kept")
+        ota_guard.back_to_normal()
+        machine.reset()
     time.sleep(1)    
     import update
     # download the release-no from repo
@@ -79,9 +95,19 @@ else:
         log.info("Normal mode activated - for chance to OS-mode type in terminal:")
         w.connect()
         print(">>>import os")
-        print(">>>os.remove('run_mode.dat')")    
-        import main1
-        main1.run(w, args.check("lin=debug"), args.check("inet=debug"), args.check("mqtt=debug"), args.get_key("file")!=None)
+        print(">>>os.remove('run_mode.dat')")
+        try:
+            import main1
+            main1.run(w, args.check("lin=debug"), args.check("inet=debug"), args.check("mqtt=debug"), args.get_key("file")!=None)
+        except Exception as e:
+            # don't hang in the REPL - save the traceback (sent via mqtt after reboot) and restart
+            log.info("crash: " + repr(e))
+            try:
+                diag.save_crash(e)
+            except Exception:
+                pass
+            time.sleep(5)
+            machine.reset()
     else:
         log.info("OS mode activated")
         w.set_ap(1)
