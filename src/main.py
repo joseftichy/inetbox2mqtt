@@ -31,14 +31,6 @@ log = logging.getLogger(__name__)
 
 log.setLevel(logging.INFO)
 
-# log lines are also sent via mqtt (topic .../log)
-try:
-    import diag
-    diag.install()
-    diag.count_boot()
-except Exception as e:
-    print("diag:", repr(e))
-
 log.info(f"release no: {rel_no}")
 w=connect.Connect(args.get_key("hw"), debuglog=args.check("connect=debug"))
 w.appname = appname
@@ -96,18 +88,8 @@ else:
         w.connect()
         print(">>>import os")
         print(">>>os.remove('run_mode.dat')")
-        try:
-            import main1
-            main1.run(w, args.check("lin=debug"), args.check("inet=debug"), args.check("mqtt=debug"), args.get_key("file")!=None)
-        except Exception as e:
-            # don't hang in the REPL - save the traceback (sent via mqtt after reboot) and restart
-            log.info("crash: " + repr(e))
-            try:
-                diag.save_crash(e)
-            except Exception:
-                pass
-            time.sleep(5)
-            machine.reset()
+        import main1
+        main1.run(w, args.check("lin=debug"), args.check("inet=debug"), args.check("mqtt=debug"), args.get_key("file")!=None)
     else:
         log.info("OS mode activated")
         w.set_ap(1)

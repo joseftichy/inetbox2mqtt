@@ -131,7 +131,6 @@ def update_repo():
         ["/lib/", "connect.py", "/lib"],
         ["/src/", "update.py", "/"],
         ["/src/", "ota_guard.py", "/"],
-        ["/src/", "diag.py", "/"],
         ["/src/", "boot.py", "/"],
         ["/src/", "release.py", "/"],
         ]
